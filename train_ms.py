@@ -8,9 +8,9 @@ from torch import nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-import torch.multiprocessing as mp
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
+# import torch.multiprocessing as mp
+# import torch.distributed as dist
+# from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.cuda.amp import autocast, GradScaler
 
 import librosa
@@ -48,11 +48,9 @@ def main():
   assert torch.cuda.is_available(), "CPU training is not allowed."
 
   n_gpus = torch.cuda.device_count()
-  os.environ['MASTER_ADDR'] = 'localhost'
-  os.environ['MASTER_PORT'] = '8000'
-
   hps = utils.get_hparams()
-  mp.spawn(run, nprocs=n_gpus, args=(n_gpus, hps,))
+
+  run(rank=0, n_gpus=n_gpus, hps=hps)
 
 
 def run(rank, n_gpus, hps):
@@ -64,7 +62,7 @@ def run(rank, n_gpus, hps):
     writer = SummaryWriter(log_dir=hps.model_dir)
     writer_eval = SummaryWriter(log_dir=os.path.join(hps.model_dir, "eval"))
 
-  dist.init_process_group(backend='nccl', init_method='env://', world_size=n_gpus, rank=rank)
+  # dist.init_process_group(backend='nccl', init_method='env://', world_size=n_gpus, rank=rank)
   torch.manual_seed(hps.train.seed)
   torch.cuda.set_device(rank)
 
@@ -102,8 +100,8 @@ def run(rank, n_gpus, hps):
       hps.train.learning_rate, 
       betas=hps.train.betas, 
       eps=hps.train.eps)
-  net_g = DDP(net_g, device_ids=[rank])
-  net_d = DDP(net_d, device_ids=[rank])
+  # net_g = DDP(net_g, device_ids=[rank])
+  # net_d = DDP(net_d, device_ids=[rank])
 
   try:
     _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), net_g, optim_g)
@@ -261,7 +259,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
         y_lengths = y_lengths[:1]
         speakers = speakers[:1]
         break
-      y_hat, attn, mask, *_ = generator.module.infer(x, x_lengths, speakers, max_len=1000)
+      y_hat, attn, mask, *_ = generator.infer(x, x_lengths, speakers, max_len=1000)
       y_hat_lengths = mask.sum([1,2]).long() * hps.data.hop_length
 
       mel = spec_to_mel_torch(
